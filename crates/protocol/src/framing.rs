@@ -1,0 +1,1 @@
+//! Binary request and response framing for the Zexadis protocol.

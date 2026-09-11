@@ -1,0 +1,1 @@
+//! Protocol command definitions and command encoding identifiers.

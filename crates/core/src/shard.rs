@@ -1,0 +1,1 @@
+//! Sharding primitives for concurrent state access.

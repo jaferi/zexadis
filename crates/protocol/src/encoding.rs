@@ -1,0 +1,1 @@
+//! Binary encoding and decoding utilities for protocol data.
