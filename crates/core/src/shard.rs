@@ -143,3 +143,278 @@ impl Default for Shard {
         Self::new()
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::thread;
+
+    #[test]
+    fn test_set_and_get() {
+        let shard = Shard::new();
+        let key = Bytes::from_static(b"k1");
+        let value = Bytes::from_static(b"v1");
+
+        assert!(shard.set(key.clone(), value.clone(), None, 1000));
+        assert_eq!(shard.get(b"k1", 1000), Some(value));
+        assert!(shard.exists(b"k1", 1000));
+    }
+
+    #[test]
+    fn test_pure_binary_non_utf8_payloads() {
+        let shard = Shard::new();
+        let key = Bytes::from_static(b"\x00\x01\xFF\xFE");
+        let value = Bytes::from_static(b"\xDE\xAD\xBE\xEF\x00");
+
+        assert!(shard.set(key, value.clone(), None, 1000));
+        assert_eq!(shard.get(b"\x00\x01\xFF\xFE", 1000), Some(value));
+        assert!(shard.exists(b"\x00\x01\xFF\xFE", 1000));
+    }
+
+    #[test]
+    fn test_lazy_expiration() {
+        let shard = Shard::new();
+        let key = Bytes::from_static(b"k1");
+        let value = Bytes::from_static(b"v1");
+        let ttl = Some(Duration::from_millis(500));
+
+        // Insert at t=1000, expires at t=1500.
+        assert!(shard.set(key, value, ttl, 1000));
+
+        // Active before expiration.
+        assert!(shard.exists(b"k1", 1499));
+        assert!(shard.get(b"k1", 1499).is_some());
+        assert_eq!(shard.len(), 1);
+
+        // Expired exactly at the deadline.
+        assert_eq!(shard.get(b"k1", 1500), None);
+        assert!(!shard.exists(b"k1", 1500));
+
+        // Access lazily evicted the expired entry.
+        assert_eq!(shard.len(), 0);
+    }
+
+    #[test]
+    fn test_cas_operations() {
+        let shard = Shard::new();
+        let key = Bytes::from_static(b"cas_key");
+
+        shard.set(
+            key.clone(),
+            Bytes::from_static(b"val1"),
+            None,
+            1000,
+        );
+
+        // CAS fails when the expected value does not match.
+        assert!(!shard.cas(
+            key.clone(),
+            b"wrong_val",
+            Bytes::from_static(b"val2"),
+            None,
+            1000,
+        ));
+
+        assert_eq!(
+            shard.get(b"cas_key", 1000),
+            Some(Bytes::from_static(b"val1"))
+        );
+
+        // CAS succeeds when the expected value matches exactly.
+        assert!(shard.cas(
+            key,
+            b"val1",
+            Bytes::from_static(b"val2"),
+            None,
+            1000,
+        ));
+
+        assert_eq!(
+            shard.get(b"cas_key", 1000),
+            Some(Bytes::from_static(b"val2"))
+        );
+    }
+
+    #[test]
+    fn test_cas_missing_key() {
+        let shard = Shard::new();
+
+        // CAS never creates a missing key.
+        assert!(!shard.cas(
+            Bytes::from_static(b"k1"),
+            b"",
+            Bytes::from_static(b"v1"),
+            None,
+            1000,
+        ));
+
+        assert_eq!(shard.get(b"k1", 1000), None);
+        assert_eq!(shard.len(), 0);
+    }
+
+    #[test]
+    fn test_cas_on_expired_key() {
+        let shard = Shard::new();
+
+        shard.set(
+            Bytes::from_static(b"k1"),
+            Bytes::from_static(b"v1"),
+            Some(Duration::from_millis(100)),
+            1000,
+        );
+
+        // Entry expired at t=1100.
+        assert!(!shard.cas(
+            Bytes::from_static(b"k1"),
+            b"v1",
+            Bytes::from_static(b"v2"),
+            None,
+            1200,
+        ));
+
+        // CAS also lazily removes the expired entry.
+        assert_eq!(shard.len(), 0);
+        assert_eq!(shard.get(b"k1", 1200), None);
+    }
+
+    #[test]
+    fn test_cas_updates_ttl() {
+        let shard = Shard::new();
+
+        shard.set(
+            Bytes::from_static(b"k1"),
+            Bytes::from_static(b"v1"),
+            None,
+            1000,
+        );
+
+        assert!(shard.cas(
+            Bytes::from_static(b"k1"),
+            b"v1",
+            Bytes::from_static(b"v2"),
+            Some(Duration::from_millis(100)),
+            1000,
+        ));
+
+        // New value is active before its new expiration.
+        assert!(shard.exists(b"k1", 1099));
+
+        // New value expires at t=1100.
+        assert!(!shard.exists(b"k1", 1100));
+        assert_eq!(shard.len(), 0);
+    }
+
+    #[test]
+    fn test_delete() {
+        let shard = Shard::new();
+        let key = Bytes::from_static(b"k1");
+
+        shard.set(
+            key.clone(),
+            Bytes::from_static(b"v1"),
+            None,
+            1000,
+        );
+
+        assert!(shard.delete(b"k1", 1000));
+        assert!(!shard.delete(b"k1", 1000));
+
+        // Deleting an expired entry returns false.
+        shard.set(
+            key,
+            Bytes::from_static(b"v1"),
+            Some(Duration::from_millis(10)),
+            1000,
+        );
+
+        assert!(!shard.delete(b"k1", 1011));
+        assert_eq!(shard.len(), 0);
+    }
+
+    #[test]
+    fn test_ttl_overflow_handling() {
+        let shard = Shard::new();
+
+        let key = Bytes::from_static(b"k1");
+        let value = Bytes::from_static(b"v1");
+
+        // Duration::MAX cannot be represented as milliseconds/u64.
+        assert!(!shard.set(key, value, Some(Duration::MAX), 1000));
+        assert_eq!(shard.len(), 0);
+    }
+
+    #[test]
+    fn test_empty_value() {
+        let shard = Shard::new();
+
+        assert!(shard.set(
+            Bytes::from_static(b"k1"),
+            Bytes::new(),
+            None,
+            1000,
+        ));
+
+        assert_eq!(
+            shard.get(b"k1", 1000),
+            Some(Bytes::new())
+        );
+
+        assert!(shard.exists(b"k1", 1000));
+    }
+
+    #[test]
+    fn test_empty_key() {
+        let shard = Shard::new();
+
+        assert!(shard.set(
+            Bytes::new(),
+            Bytes::from_static(b"v1"),
+            None,
+            1000,
+        ));
+
+        assert_eq!(
+            shard.get(b"", 1000),
+            Some(Bytes::from_static(b"v1"))
+        );
+
+        assert!(shard.exists(b"", 1000));
+    }
+
+    #[test]
+    fn test_concurrent_shard_access() {
+        let shard = Arc::new(Shard::new());
+        let mut handles = Vec::new();
+
+        for i in 0..10 {
+            let shard = Arc::clone(&shard);
+
+            handles.push(thread::spawn(move || {
+                let key = Bytes::from(format!("key_{i}"));
+                let value = Bytes::from(format!("value_{i}"));
+
+                assert!(shard.set(
+                    key.clone(),
+                    value.clone(),
+                    None,
+                    1000,
+                ));
+
+                assert_eq!(
+                    shard.get(key.as_ref(), 1000),
+                    Some(value)
+                );
+
+                assert!(shard.exists(key.as_ref(), 1000));
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        assert_eq!(shard.len(), 10);
+    }
+}
