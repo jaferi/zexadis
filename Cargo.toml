@@ -33,6 +33,7 @@ categories = [
 ]
 
 [workspace.dependencies]
+ahash = "0.8.12"
 bytes = "1"
 dashmap = "6"
 thiserror = "2"

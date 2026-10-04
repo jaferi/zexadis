@@ -18,3 +18,4 @@ categories.workspace = true
 bytes.workspace = true
 dashmap.workspace = true
 thiserror.workspace = true
+ahash.workspace = true
