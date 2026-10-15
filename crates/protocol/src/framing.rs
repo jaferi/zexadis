@@ -140,6 +140,9 @@ pub enum FrameError {
 
     #[error("frame length exceeds the wire format's u32 limit")]
     FrameLengthOverflow,
+
+    #[error("frame minimum length not satisfied {0}")]
+    InvalidFrameLength(usize),
 }
 
 #[cfg(test)]
