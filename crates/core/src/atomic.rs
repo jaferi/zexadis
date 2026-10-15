@@ -1,1 +1,0 @@
-//! Atomic storage operations such as compare-and-swap and increment.
