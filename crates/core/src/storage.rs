@@ -66,18 +66,12 @@ impl Storage {
     }
 
     /// Executes a storage command.
-    pub fn execute(
-        &self,
-        command: Command,
-        now_ms: u64,
-    ) -> Result<CommandResult, StorageError> {
+    pub fn execute(&self, command: Command, now_ms: u64) -> Result<CommandResult, StorageError> {
         match command {
-            Command::Get { key } => {
-                match self.shard(&key).get(&key, now_ms) {
-                    Some(value) => Ok(CommandResult::Entry(value)),
-                    None => Ok(CommandResult::NotFound),
-                }
-            }
+            Command::Get { key } => match self.shard(&key).get(&key, now_ms) {
+                Some(value) => Ok(CommandResult::Entry(value)),
+                None => Ok(CommandResult::NotFound),
+            },
 
             Command::Set { key, value, ttl } => {
                 let stored = self.shard(&key).set(key, value, ttl, now_ms);
@@ -105,26 +99,19 @@ impl Storage {
             } => {
                 // Check for TTL math overflow up-front if TTL is specified
                 if let Some(duration) = ttl {
-                    let ttl_ms = u64::try_from(duration.as_millis()).map_err(|_| StorageError::InvalidTtl)?;
+                    let ttl_ms = u64::try_from(duration.as_millis())
+                        .map_err(|_| StorageError::InvalidTtl)?;
                     if now_ms.checked_add(ttl_ms).is_none() {
                         return Err(StorageError::InvalidTtl);
                     }
                 }
 
-                let updated = self.shard(&key).cas(
-                    key,
-                    &expected,
-                    new_value,
-                    ttl,
-                    now_ms,
-                );
+                let updated = self.shard(&key).cas(key, &expected, new_value, ttl, now_ms);
 
                 Ok(CommandResult::Cas(updated))
             }
 
-            Command::Batch { commands } => {
-                self.execute_batch(commands, now_ms)
-            }
+            Command::Batch { commands } => self.execute_batch(commands, now_ms),
         }
     }
 
@@ -136,13 +123,16 @@ impl Storage {
         commands: Vec<Command>,
         now_ms: u64,
     ) -> Result<CommandResult, StorageError> {
+        if commands
+            .iter()
+            .any(|command| matches!(command, Command::Batch { .. }))
+        {
+            return Err(StorageError::NestedBatchNotAllowed);
+        }
+
         let mut results = Vec::with_capacity(commands.len());
 
         for command in commands {
-            if matches!(command, Command::Batch { .. }) {
-                return Err(StorageError::NestedBatchNotAllowed);
-            }
-
             results.push(self.execute(command, now_ms)?);
         }
 
