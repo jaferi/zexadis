@@ -40,13 +40,7 @@ impl Shard {
     /// Stores a binary payload with an optional TTL.
     ///
     /// Returns `false` if the TTL duration calculation overflows.
-    pub fn set(
-        &self,
-        key: Bytes,
-        value: Bytes,
-        ttl: Option<Duration>,
-        now_ms: u64,
-    ) -> bool {
+    pub fn set(&self, key: Bytes, value: Bytes, ttl: Option<Duration>, now_ms: u64) -> bool {
         let entry = match Entry::new(value, ttl, now_ms) {
             Some(entry) => entry,
             None => return false,
@@ -102,22 +96,22 @@ impl Shard {
             Some(entry) => entry,
             None => return false,
         };
-    
+
         match self.data.entry(key) {
             DashEntry::Occupied(mut occupied) => {
                 if occupied.get().is_expired(now_ms) {
                     occupied.remove();
                     return false;
                 }
-    
+
                 if occupied.get().payload.as_ref() != expected {
                     return false;
                 }
-    
+
                 occupied.insert(new_entry);
                 true
             }
-    
+
             DashEntry::Vacant(_) => false,
         }
     }
@@ -143,7 +137,6 @@ impl Default for Shard {
         Self::new()
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -201,12 +194,7 @@ mod tests {
         let shard = Shard::new();
         let key = Bytes::from_static(b"cas_key");
 
-        shard.set(
-            key.clone(),
-            Bytes::from_static(b"val1"),
-            None,
-            1000,
-        );
+        shard.set(key.clone(), Bytes::from_static(b"val1"), None, 1000);
 
         // CAS fails when the expected value does not match.
         assert!(!shard.cas(
@@ -223,13 +211,7 @@ mod tests {
         );
 
         // CAS succeeds when the expected value matches exactly.
-        assert!(shard.cas(
-            key,
-            b"val1",
-            Bytes::from_static(b"val2"),
-            None,
-            1000,
-        ));
+        assert!(shard.cas(key, b"val1", Bytes::from_static(b"val2"), None, 1000,));
 
         assert_eq!(
             shard.get(b"cas_key", 1000),
@@ -311,12 +293,7 @@ mod tests {
         let shard = Shard::new();
         let key = Bytes::from_static(b"k1");
 
-        shard.set(
-            key.clone(),
-            Bytes::from_static(b"v1"),
-            None,
-            1000,
-        );
+        shard.set(key.clone(), Bytes::from_static(b"v1"), None, 1000);
 
         assert!(shard.delete(b"k1", 1000));
         assert!(!shard.delete(b"k1", 1000));
@@ -349,17 +326,9 @@ mod tests {
     fn test_empty_value() {
         let shard = Shard::new();
 
-        assert!(shard.set(
-            Bytes::from_static(b"k1"),
-            Bytes::new(),
-            None,
-            1000,
-        ));
+        assert!(shard.set(Bytes::from_static(b"k1"), Bytes::new(), None, 1000,));
 
-        assert_eq!(
-            shard.get(b"k1", 1000),
-            Some(Bytes::new())
-        );
+        assert_eq!(shard.get(b"k1", 1000), Some(Bytes::new()));
 
         assert!(shard.exists(b"k1", 1000));
     }
@@ -368,17 +337,9 @@ mod tests {
     fn test_empty_key() {
         let shard = Shard::new();
 
-        assert!(shard.set(
-            Bytes::new(),
-            Bytes::from_static(b"v1"),
-            None,
-            1000,
-        ));
+        assert!(shard.set(Bytes::new(), Bytes::from_static(b"v1"), None, 1000,));
 
-        assert_eq!(
-            shard.get(b"", 1000),
-            Some(Bytes::from_static(b"v1"))
-        );
+        assert_eq!(shard.get(b"", 1000), Some(Bytes::from_static(b"v1")));
 
         assert!(shard.exists(b"", 1000));
     }
@@ -395,17 +356,9 @@ mod tests {
                 let key = Bytes::from(format!("key_{i}"));
                 let value = Bytes::from(format!("value_{i}"));
 
-                assert!(shard.set(
-                    key.clone(),
-                    value.clone(),
-                    None,
-                    1000,
-                ));
+                assert!(shard.set(key.clone(), value.clone(), None, 1000,));
 
-                assert_eq!(
-                    shard.get(key.as_ref(), 1000),
-                    Some(value)
-                );
+                assert_eq!(shard.get(key.as_ref(), 1000), Some(value));
 
                 assert!(shard.exists(key.as_ref(), 1000));
             }));

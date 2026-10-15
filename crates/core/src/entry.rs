@@ -17,11 +17,7 @@ impl Entry {
     /// Returns `None` if the TTL cannot be represented in milliseconds
     /// or if the resulting expiration timestamp overflows `u64`.
     #[inline]
-    pub fn new(
-        payload: Bytes,
-        ttl: Option<Duration>,
-        now_ms: u64,
-    ) -> Option<Self> {
+    pub fn new(payload: Bytes, ttl: Option<Duration>, now_ms: u64) -> Option<Self> {
         let expires_at = match ttl {
             Some(ttl) => {
                 let ttl_ms = u64::try_from(ttl.as_millis()).ok()?;
@@ -45,7 +41,6 @@ impl Entry {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -98,12 +93,7 @@ mod tests {
 
     #[test]
     fn test_zero_ttl_expires_immediately() {
-        let entry = Entry::new(
-            Bytes::from_static(b"value"),
-            Some(Duration::ZERO),
-            1000,
-        )
-        .unwrap();
+        let entry = Entry::new(Bytes::from_static(b"value"), Some(Duration::ZERO), 1000).unwrap();
 
         assert_eq!(entry.expires_at, Some(1000));
         assert!(entry.is_expired(1000));
@@ -156,11 +146,7 @@ mod tests {
 
     #[test]
     fn test_ttl_duration_overflow() {
-        let result = Entry::new(
-            Bytes::from_static(b"value"),
-            Some(Duration::MAX),
-            1000,
-        );
+        let result = Entry::new(Bytes::from_static(b"value"), Some(Duration::MAX), 1000);
 
         assert!(result.is_none());
     }
@@ -170,12 +156,7 @@ mod tests {
         let now_ms = u64::MAX - 1000;
         let ttl = Duration::from_millis(500);
 
-        let entry = Entry::new(
-            Bytes::from_static(b"value"),
-            Some(ttl),
-            now_ms,
-        )
-        .unwrap();
+        let entry = Entry::new(Bytes::from_static(b"value"), Some(ttl), now_ms).unwrap();
 
         assert_eq!(entry.expires_at, Some(u64::MAX - 500));
         assert!(!entry.is_expired(u64::MAX - 501));
