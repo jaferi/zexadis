@@ -140,7 +140,6 @@ impl Storage {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,17 +222,9 @@ mod tests {
 
         assert_eq!(set_result, Ok(CommandResult::Set));
 
-        let get_result = storage.execute(
-            Command::Get {
-                key: bytes(b"key"),
-            },
-            1000,
-        );
+        let get_result = storage.execute(Command::Get { key: bytes(b"key") }, 1000);
 
-        assert_eq!(
-            get_result,
-            Ok(CommandResult::Entry(bytes(b"value")))
-        );
+        assert_eq!(get_result, Ok(CommandResult::Entry(bytes(b"value"))));
     }
 
     #[test]
@@ -276,17 +267,9 @@ mod tests {
             )
             .unwrap();
 
-        let result = storage.execute(
-            Command::Get {
-                key: bytes(b"key"),
-            },
-            1000,
-        );
+        let result = storage.execute(Command::Get { key: bytes(b"key") }, 1000);
 
-        assert_eq!(
-            result,
-            Ok(CommandResult::Entry(bytes(b"second")))
-        );
+        assert_eq!(result, Ok(CommandResult::Entry(bytes(b"second"))));
     }
 
     #[test]
@@ -304,24 +287,11 @@ mod tests {
             )
             .unwrap();
 
-        let delete_result = storage.execute(
-            Command::Del {
-                key: bytes(b"key"),
-            },
-            1000,
-        );
+        let delete_result = storage.execute(Command::Del { key: bytes(b"key") }, 1000);
 
-        assert_eq!(
-            delete_result,
-            Ok(CommandResult::Deleted(true))
-        );
+        assert_eq!(delete_result, Ok(CommandResult::Deleted(true)));
 
-        let get_result = storage.execute(
-            Command::Get {
-                key: bytes(b"key"),
-            },
-            1000,
-        );
+        let get_result = storage.execute(Command::Get { key: bytes(b"key") }, 1000);
 
         assert_eq!(get_result, Ok(CommandResult::NotFound));
     }
@@ -401,17 +371,9 @@ mod tests {
 
         assert_eq!(cas_result, Ok(CommandResult::Cas(true)));
 
-        let get_result = storage.execute(
-            Command::Get {
-                key: bytes(b"key"),
-            },
-            1000,
-        );
+        let get_result = storage.execute(Command::Get { key: bytes(b"key") }, 1000);
 
-        assert_eq!(
-            get_result,
-            Ok(CommandResult::Entry(bytes(b"new")))
-        );
+        assert_eq!(get_result, Ok(CommandResult::Entry(bytes(b"new"))));
     }
 
     #[test]
@@ -441,17 +403,9 @@ mod tests {
 
         assert_eq!(cas_result, Ok(CommandResult::Cas(false)));
 
-        let get_result = storage.execute(
-            Command::Get {
-                key: bytes(b"key"),
-            },
-            1000,
-        );
+        let get_result = storage.execute(Command::Get { key: bytes(b"key") }, 1000);
 
-        assert_eq!(
-            get_result,
-            Ok(CommandResult::Entry(bytes(b"original")))
-        );
+        assert_eq!(get_result, Ok(CommandResult::Entry(bytes(b"original"))));
     }
 
     // TTL validation
@@ -472,12 +426,7 @@ mod tests {
 
         // The failed SET must not create the key.
         assert_eq!(
-            storage.execute(
-                Command::Get {
-                    key: bytes(b"key"),
-                },
-                u64::MAX,
-            ),
+            storage.execute(Command::Get { key: bytes(b"key") }, u64::MAX,),
             Ok(CommandResult::NotFound)
         );
     }
@@ -511,12 +460,7 @@ mod tests {
 
         // Failed CAS must preserve the existing value.
         assert_eq!(
-            storage.execute(
-                Command::Get {
-                    key: bytes(b"key"),
-                },
-                1000,
-            ),
+            storage.execute(Command::Get { key: bytes(b"key") }, 1000,),
             Ok(CommandResult::Entry(bytes(b"original")))
         );
     }
@@ -534,17 +478,13 @@ mod tests {
                         value: bytes(b"first"),
                         ttl: None,
                     },
-                    Command::Get {
-                        key: bytes(b"key"),
-                    },
+                    Command::Get { key: bytes(b"key") },
                     Command::Set {
                         key: bytes(b"key"),
                         value: bytes(b"second"),
                         ttl: None,
                     },
-                    Command::Get {
-                        key: bytes(b"key"),
-                    },
+                    Command::Get { key: bytes(b"key") },
                 ],
             },
             1000,
@@ -565,17 +505,9 @@ mod tests {
     fn test_batch_empty_commands() {
         let storage = storage();
 
-        let result = storage.execute(
-            Command::Batch {
-                commands: vec![],
-            },
-            1000,
-        );
+        let result = storage.execute(Command::Batch { commands: vec![] }, 1000);
 
-        assert_eq!(
-            result,
-            Ok(CommandResult::Batch(vec![]))
-        );
+        assert_eq!(result, Ok(CommandResult::Batch(vec![])));
     }
 
     #[test]
@@ -584,19 +516,12 @@ mod tests {
 
         let result = storage.execute(
             Command::Batch {
-                commands: vec![
-                    Command::Batch {
-                        commands: vec![],
-                    },
-                ],
+                commands: vec![Command::Batch { commands: vec![] }],
             },
             1000,
         );
 
-        assert_eq!(
-            result,
-            Err(StorageError::NestedBatchNotAllowed)
-        );
+        assert_eq!(result, Err(StorageError::NestedBatchNotAllowed));
     }
 
     #[test]
@@ -611,27 +536,17 @@ mod tests {
                         value: bytes(b"value"),
                         ttl: None,
                     },
-                    Command::Batch {
-                        commands: vec![],
-                    },
+                    Command::Batch { commands: vec![] },
                 ],
             },
             1000,
         );
 
-        assert_eq!(
-            result,
-            Err(StorageError::NestedBatchNotAllowed)
-        );
+        assert_eq!(result, Err(StorageError::NestedBatchNotAllowed));
 
         // Validation must happen before any command executes.
         assert_eq!(
-            storage.execute(
-                Command::Get {
-                    key: bytes(b"key"),
-                },
-                1000,
-            ),
+            storage.execute(Command::Get { key: bytes(b"key") }, 1000,),
             Ok(CommandResult::NotFound)
         );
     }

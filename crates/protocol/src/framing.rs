@@ -1,7 +1,7 @@
 //! Binary request and response framing for the Zexadis protocol.
 
-use thiserror::Error;
 use bytes::Bytes;
+use thiserror::Error;
 
 /// The number of bytes used to encode the frame length.
 pub const FRAME_LENGTH_SIZE: usize = 4;
@@ -85,11 +85,7 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn new(
-        version: ProtocolVersion,
-        opcode: Opcode,
-        payload: Bytes,
-    ) -> Self {
+    pub fn new(version: ProtocolVersion, opcode: Opcode, payload: Bytes) -> Self {
         Self {
             version,
             opcode,
@@ -133,10 +129,7 @@ pub enum FrameError {
     UnknownOpcode(u8),
 
     #[error("frame length {actual} exceeds maximum {maximum}")]
-    FrameTooLarge {
-        actual: usize,
-        maximum: usize,
-    },
+    FrameTooLarge { actual: usize, maximum: usize },
 
     #[error("frame length exceeds the wire format's u32 limit")]
     FrameLengthOverflow,
@@ -151,10 +144,7 @@ mod tests {
 
     #[test]
     fn test_protocol_version_conversion() {
-        assert_eq!(
-            ProtocolVersion::try_from(1),
-            Ok(ProtocolVersion::V1)
-        );
+        assert_eq!(ProtocolVersion::try_from(1), Ok(ProtocolVersion::V1));
 
         assert_eq!(
             ProtocolVersion::try_from(2),
@@ -165,14 +155,8 @@ mod tests {
     #[test]
     fn test_opcode_conversion() {
         assert_eq!(Opcode::try_from(0x01), Ok(Opcode::Get));
-        assert_eq!(
-            Opcode::try_from(0xFF),
-            Ok(Opcode::ErrorResponse)
-        );
-        assert_eq!(
-            Opcode::try_from(0x07),
-            Err(FrameError::UnknownOpcode(0x07))
-        );
+        assert_eq!(Opcode::try_from(0xFF), Ok(Opcode::ErrorResponse));
+        assert_eq!(Opcode::try_from(0x07), Err(FrameError::UnknownOpcode(0x07)));
     }
 
     #[test]
@@ -188,11 +172,7 @@ mod tests {
 
     #[test]
     fn test_empty_payload_has_minimum_frame_length() {
-        let frame = Frame::new(
-            ProtocolVersion::V1,
-            Opcode::Get,
-            Bytes::new(),
-        );
+        let frame = Frame::new(ProtocolVersion::V1, Opcode::Get, Bytes::new());
 
         assert_eq!(frame.frame_length(), FRAME_HEADER_SIZE);
         assert!(frame.validate(DEFAULT_MAX_FRAME_LENGTH).is_ok());
@@ -200,22 +180,14 @@ mod tests {
 
     #[test]
     fn test_frame_within_maximum_length_is_valid() {
-        let frame = Frame::new(
-            ProtocolVersion::V1,
-            Opcode::Set,
-            Bytes::from(vec![0; 6]),
-        );
+        let frame = Frame::new(ProtocolVersion::V1, Opcode::Set, Bytes::from(vec![0; 6]));
 
         assert!(frame.validate(8).is_ok());
     }
 
     #[test]
     fn test_frame_exceeding_maximum_length_is_rejected() {
-        let frame = Frame::new(
-            ProtocolVersion::V1,
-            Opcode::Set,
-            Bytes::from(vec![0; 7]),
-        );
+        let frame = Frame::new(ProtocolVersion::V1, Opcode::Set, Bytes::from(vec![0; 7]));
 
         assert_eq!(
             frame.validate(8),
