@@ -3,4 +3,6 @@
 pub mod command;
 pub mod encoding;
 pub mod error;
+
 pub mod framing;
+pub use framing::{Frame, FrameError, Opcode, ProtocolVersion};
