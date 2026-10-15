@@ -15,6 +15,9 @@ pub enum StorageError {
 
     #[error("Nested batches are strictly prohibited")]
     NestedBatchNotAllowed,
+
+    #[error("Calculated expiration timestamp exceeds maximum supported u64 bound")]
+    InvalidTtl,
 }
 
 /// A sharded, in-memory key-value storage engine.
@@ -52,6 +55,7 @@ impl Storage {
         let mut hasher = AHasher::default();
         hasher.write(key);
 
+        // bitwise is cheaper than modulo
         (hasher.finish() as usize) & self.shard_mask
     }
 
@@ -76,7 +80,10 @@ impl Storage {
             }
 
             Command::Set { key, value, ttl } => {
-                self.shard(&key).set(key, value, ttl, now_ms);
+                let stored = self.shard(&key).set(key, value, ttl, now_ms);
+                if !stored {
+                    return Err(StorageError::InvalidTtl);
+                }
                 Ok(CommandResult::Set)
             }
 
@@ -96,6 +103,14 @@ impl Storage {
                 new_value,
                 ttl,
             } => {
+                // Check for TTL math overflow up-front if TTL is specified
+                if let Some(duration) = ttl {
+                    let ttl_ms = u64::try_from(duration.as_millis()).map_err(|_| StorageError::InvalidTtl)?;
+                    if now_ms.checked_add(ttl_ms).is_none() {
+                        return Err(StorageError::InvalidTtl);
+                    }
+                }
+
                 let updated = self.shard(&key).cas(
                     key,
                     &expected,
