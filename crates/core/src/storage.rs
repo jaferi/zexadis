@@ -139,3 +139,540 @@ impl Storage {
         Ok(CommandResult::Batch(results))
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::Bytes;
+    use std::time::Duration;
+
+    fn storage() -> Storage {
+        Storage::new(4).unwrap()
+    }
+
+    fn bytes(value: &[u8]) -> Bytes {
+        Bytes::copy_from_slice(value)
+    }
+
+    // Initialization and shard routing
+    #[test]
+    fn test_create_with_valid_shard_counts() {
+        for count in [1, 2, 4, 8] {
+            let storage = Storage::new(count).unwrap();
+
+            assert_eq!(storage.shard_count(), count);
+        }
+    }
+
+    #[test]
+    fn test_reject_invalid_shard_counts() {
+        for count in [0, 3, 6, 10] {
+            assert!(matches!(
+                Storage::new(count),
+                Err(StorageError::InvalidShardCount)
+            ));
+        }
+    }
+
+    #[test]
+    fn test_shard_index_is_in_bounds() {
+        let storage = storage();
+
+        let keys: &[&[u8]] = &[
+            b"account:1",
+            b"account:2",
+            b"transaction:123",
+            b"\x00\x01\xFF",
+            b"",
+        ];
+
+        for key in keys {
+            assert!(
+                storage.shard_index(key) < storage.shard_count(),
+                "Shard index out of bounds for key: {key:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_same_key_maps_to_same_shard() {
+        let storage = storage();
+        let key = b"account:123";
+
+        let first = storage.shard_index(key);
+
+        for _ in 0..100 {
+            assert_eq!(storage.shard_index(key), first);
+        }
+    }
+
+    // Basic command execution
+    #[test]
+    fn test_set_and_get() {
+        let storage = storage();
+
+        let set_result = storage.execute(
+            Command::Set {
+                key: bytes(b"key"),
+                value: bytes(b"value"),
+                ttl: None,
+            },
+            1000,
+        );
+
+        assert_eq!(set_result, Ok(CommandResult::Set));
+
+        let get_result = storage.execute(
+            Command::Get {
+                key: bytes(b"key"),
+            },
+            1000,
+        );
+
+        assert_eq!(
+            get_result,
+            Ok(CommandResult::Entry(bytes(b"value")))
+        );
+    }
+
+    #[test]
+    fn test_get_missing_key() {
+        let storage = storage();
+
+        let result = storage.execute(
+            Command::Get {
+                key: bytes(b"missing"),
+            },
+            1000,
+        );
+
+        assert_eq!(result, Ok(CommandResult::NotFound));
+    }
+
+    #[test]
+    fn test_set_overwrites_existing_value() {
+        let storage = storage();
+
+        storage
+            .execute(
+                Command::Set {
+                    key: bytes(b"key"),
+                    value: bytes(b"first"),
+                    ttl: None,
+                },
+                1000,
+            )
+            .unwrap();
+
+        storage
+            .execute(
+                Command::Set {
+                    key: bytes(b"key"),
+                    value: bytes(b"second"),
+                    ttl: None,
+                },
+                1000,
+            )
+            .unwrap();
+
+        let result = storage.execute(
+            Command::Get {
+                key: bytes(b"key"),
+            },
+            1000,
+        );
+
+        assert_eq!(
+            result,
+            Ok(CommandResult::Entry(bytes(b"second")))
+        );
+    }
+
+    #[test]
+    fn test_delete_existing_key() {
+        let storage = storage();
+
+        storage
+            .execute(
+                Command::Set {
+                    key: bytes(b"key"),
+                    value: bytes(b"value"),
+                    ttl: None,
+                },
+                1000,
+            )
+            .unwrap();
+
+        let delete_result = storage.execute(
+            Command::Del {
+                key: bytes(b"key"),
+            },
+            1000,
+        );
+
+        assert_eq!(
+            delete_result,
+            Ok(CommandResult::Deleted(true))
+        );
+
+        let get_result = storage.execute(
+            Command::Get {
+                key: bytes(b"key"),
+            },
+            1000,
+        );
+
+        assert_eq!(get_result, Ok(CommandResult::NotFound));
+    }
+
+    #[test]
+    fn test_delete_missing_key() {
+        let storage = storage();
+
+        let result = storage.execute(
+            Command::Del {
+                key: bytes(b"missing"),
+            },
+            1000,
+        );
+
+        assert_eq!(result, Ok(CommandResult::Deleted(false)));
+    }
+
+    #[test]
+    fn test_exists_for_existing_and_missing_keys() {
+        let storage = storage();
+
+        storage
+            .execute(
+                Command::Set {
+                    key: bytes(b"existing"),
+                    value: bytes(b"value"),
+                    ttl: None,
+                },
+                1000,
+            )
+            .unwrap();
+
+        let existing = storage.execute(
+            Command::Exists {
+                key: bytes(b"existing"),
+            },
+            1000,
+        );
+
+        let missing = storage.execute(
+            Command::Exists {
+                key: bytes(b"missing"),
+            },
+            1000,
+        );
+
+        assert_eq!(existing, Ok(CommandResult::Exists(true)));
+        assert_eq!(missing, Ok(CommandResult::Exists(false)));
+    }
+
+    // Compare-and-swap
+    #[test]
+    fn test_cas_matching_value() {
+        let storage = storage();
+
+        storage
+            .execute(
+                Command::Set {
+                    key: bytes(b"key"),
+                    value: bytes(b"old"),
+                    ttl: None,
+                },
+                1000,
+            )
+            .unwrap();
+
+        let cas_result = storage.execute(
+            Command::Cas {
+                key: bytes(b"key"),
+                expected: bytes(b"old"),
+                new_value: bytes(b"new"),
+                ttl: None,
+            },
+            1000,
+        );
+
+        assert_eq!(cas_result, Ok(CommandResult::Cas(true)));
+
+        let get_result = storage.execute(
+            Command::Get {
+                key: bytes(b"key"),
+            },
+            1000,
+        );
+
+        assert_eq!(
+            get_result,
+            Ok(CommandResult::Entry(bytes(b"new")))
+        );
+    }
+
+    #[test]
+    fn test_cas_mismatched_value() {
+        let storage = storage();
+
+        storage
+            .execute(
+                Command::Set {
+                    key: bytes(b"key"),
+                    value: bytes(b"original"),
+                    ttl: None,
+                },
+                1000,
+            )
+            .unwrap();
+
+        let cas_result = storage.execute(
+            Command::Cas {
+                key: bytes(b"key"),
+                expected: bytes(b"wrong"),
+                new_value: bytes(b"new"),
+                ttl: None,
+            },
+            1000,
+        );
+
+        assert_eq!(cas_result, Ok(CommandResult::Cas(false)));
+
+        let get_result = storage.execute(
+            Command::Get {
+                key: bytes(b"key"),
+            },
+            1000,
+        );
+
+        assert_eq!(
+            get_result,
+            Ok(CommandResult::Entry(bytes(b"original")))
+        );
+    }
+
+    // TTL validation
+    #[test]
+    fn test_set_rejects_ttl_overflow() {
+        let storage = storage();
+
+        let result = storage.execute(
+            Command::Set {
+                key: bytes(b"key"),
+                value: bytes(b"value"),
+                ttl: Some(Duration::from_millis(1)),
+            },
+            u64::MAX,
+        );
+
+        assert_eq!(result, Err(StorageError::InvalidTtl));
+
+        // The failed SET must not create the key.
+        assert_eq!(
+            storage.execute(
+                Command::Get {
+                    key: bytes(b"key"),
+                },
+                u64::MAX,
+            ),
+            Ok(CommandResult::NotFound)
+        );
+    }
+
+    #[test]
+    fn test_cas_rejects_ttl_overflow() {
+        let storage = storage();
+
+        storage
+            .execute(
+                Command::Set {
+                    key: bytes(b"key"),
+                    value: bytes(b"original"),
+                    ttl: None,
+                },
+                1000,
+            )
+            .unwrap();
+
+        let result = storage.execute(
+            Command::Cas {
+                key: bytes(b"key"),
+                expected: bytes(b"original"),
+                new_value: bytes(b"replacement"),
+                ttl: Some(Duration::from_millis(1)),
+            },
+            u64::MAX,
+        );
+
+        assert_eq!(result, Err(StorageError::InvalidTtl));
+
+        // Failed CAS must preserve the existing value.
+        assert_eq!(
+            storage.execute(
+                Command::Get {
+                    key: bytes(b"key"),
+                },
+                1000,
+            ),
+            Ok(CommandResult::Entry(bytes(b"original")))
+        );
+    }
+
+    // Batch execution
+    #[test]
+    fn test_batch_executes_in_order() {
+        let storage = storage();
+
+        let result = storage.execute(
+            Command::Batch {
+                commands: vec![
+                    Command::Set {
+                        key: bytes(b"key"),
+                        value: bytes(b"first"),
+                        ttl: None,
+                    },
+                    Command::Get {
+                        key: bytes(b"key"),
+                    },
+                    Command::Set {
+                        key: bytes(b"key"),
+                        value: bytes(b"second"),
+                        ttl: None,
+                    },
+                    Command::Get {
+                        key: bytes(b"key"),
+                    },
+                ],
+            },
+            1000,
+        );
+
+        assert_eq!(
+            result,
+            Ok(CommandResult::Batch(vec![
+                CommandResult::Set,
+                CommandResult::Entry(bytes(b"first")),
+                CommandResult::Set,
+                CommandResult::Entry(bytes(b"second")),
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_batch_empty_commands() {
+        let storage = storage();
+
+        let result = storage.execute(
+            Command::Batch {
+                commands: vec![],
+            },
+            1000,
+        );
+
+        assert_eq!(
+            result,
+            Ok(CommandResult::Batch(vec![]))
+        );
+    }
+
+    #[test]
+    fn test_batch_rejects_nested_batch() {
+        let storage = storage();
+
+        let result = storage.execute(
+            Command::Batch {
+                commands: vec![
+                    Command::Batch {
+                        commands: vec![],
+                    },
+                ],
+            },
+            1000,
+        );
+
+        assert_eq!(
+            result,
+            Err(StorageError::NestedBatchNotAllowed)
+        );
+    }
+
+    #[test]
+    fn test_batch_rejects_nested_batch_before_execution() {
+        let storage = storage();
+
+        let result = storage.execute(
+            Command::Batch {
+                commands: vec![
+                    Command::Set {
+                        key: bytes(b"key"),
+                        value: bytes(b"value"),
+                        ttl: None,
+                    },
+                    Command::Batch {
+                        commands: vec![],
+                    },
+                ],
+            },
+            1000,
+        );
+
+        assert_eq!(
+            result,
+            Err(StorageError::NestedBatchNotAllowed)
+        );
+
+        // Validation must happen before any command executes.
+        assert_eq!(
+            storage.execute(
+                Command::Get {
+                    key: bytes(b"key"),
+                },
+                1000,
+            ),
+            Ok(CommandResult::NotFound)
+        );
+    }
+
+    #[test]
+    fn test_batch_preserves_ttl_semantics() {
+        let storage = storage();
+
+        let result = storage.execute(
+            Command::Batch {
+                commands: vec![
+                    Command::Set {
+                        key: bytes(b"temporary"),
+                        value: bytes(b"value"),
+                        ttl: Some(Duration::from_millis(500)),
+                    },
+                    Command::Get {
+                        key: bytes(b"temporary"),
+                    },
+                ],
+            },
+            1000,
+        );
+
+        assert_eq!(
+            result,
+            Ok(CommandResult::Batch(vec![
+                CommandResult::Set,
+                CommandResult::Entry(bytes(b"value")),
+            ]))
+        );
+
+        // The entry expires exactly at 1500ms.
+        assert_eq!(
+            storage.execute(
+                Command::Get {
+                    key: bytes(b"temporary"),
+                },
+                1500,
+            ),
+            Ok(CommandResult::NotFound)
+        );
+    }
+}
