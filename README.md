@@ -1,49 +1,93 @@
 # Zexadis
 
-> A lightweight, binary-first hot-state store for latency-sensitive infrastructure.
+**A lightweight, binary-first hot-state store for latency-sensitive infrastructure.**
 
-Zexadis is a high-performance, in-memory state store designed for workloads where low latency, predictable behavior, and efficient binary data handling matter.
+Zexadis is a high-performance, in-memory state store designed for infrastructure where low latency, concurrent access, and efficient binary data handling matter.
 
-It is intended for infrastructure such as:
+It is designed to run alongside infrastructure such as:
 
-* RPC nodes
-* MEV and searcher infrastructure
-* L2 sequencers
-* Indexers
-* Transaction and simulation systems
-* AI workers and agents
+- RPC nodes and blockchain clients
+- MEV and searcher infrastructure
+- L2 sequencers and transaction processors
+- Blockchain indexers and simulation systems
+- AI workers, agents, and model-serving infrastructure
 
-Zexadis is **not intended to be a general-purpose Redis replacement**. It focuses on a smaller command surface and a binary-first data path for latency-sensitive workloads.
+Zexadis focuses on a small, purpose-built command surface and a binary-first data path. It is not intended to be a general-purpose Redis replacement.
 
 ## Status
 
-🚧 **Early development**
+**Early development — APIs and protocol are evolving.**
 
-The project is currently in the architecture and core-engine development stage. APIs, protocol formats, and implementation details are subject to change.
+The core storage engine implements sharded in-memory storage, binary keys and values, TTL-based expiration, atomic compare-and-swap (CAS), and sequential batch execution.
+
+The binary wire protocol and TCP server are under development. The project is not yet intended for production deployment.
 
 ## Design Goals
 
-* Binary-first data handling
-* Low allocation and copy overhead
-* Predictable latency
-* High concurrency
-* Atomic operations
-* Small and focused command surface
-* Simple containerized deployment
-* Benchmark-driven optimization
+- **Binary-first:** Handle arbitrary binary keys and values without requiring text serialization.
+- **Low overhead:** Minimize unnecessary allocations and data copies.
+- **Predictable behavior:** Define expiration, concurrency, and command semantics explicitly.
+- **Concurrent access:** Partition storage into independent shards.
+- **Atomic operations:** Provide atomic compare-and-swap for individual keys.
+- **Focused API:** Keep the command surface small and suited to hot-state workloads.
+- **Network access:** Expose storage through a dedicated server and binary protocol.
+- **Benchmark-driven optimization:** Validate performance decisions with reproducible measurements.
 
 ## Architecture
 
-Zexadis is organized as a Cargo workspace:
+Zexadis is organized as a Rust Cargo workspace:
 
 ```text
 crates/
-├── core/       # Storage engine and state management
-├── protocol/   # Binary protocol and framing
-└── server/     # TCP server and connection handling
+├── core/       # In-memory storage engine and command execution
+├── protocol/   # Binary frames, encoding, and protocol messages
+└── server/     # TCP listener, connections, and request lifecycle
 ```
 
-The initial implementation is in-memory and uses sharded state for concurrent access.
+### Core
+
+The core engine owns the in-memory state and executes storage commands.
+
+- Sharded storage using `DashMap`
+- Binary keys and values using `Bytes`
+- TTL-based expiration with lazy removal
+- Atomic compare-and-swap
+- Sequential batch execution with ordered results
+- Explicit validation for invalid TTLs and unsupported nested batches
+
+The shard count is configured during initialization and must be a non-zero power of two.
+
+Batch execution is ordered but not transactional. Operations completed before an execution error are not rolled back, and batches do not provide cross-shard atomicity.
+
+### Protocol
+
+The protocol crate defines the wire format used by network clients.
+
+The initial design uses length-prefixed binary frames containing:
+
+- A four-byte big-endian frame length
+- A one-byte protocol version
+- A one-byte opcode
+- A variable-length binary payload
+
+The initial maximum frame length is 8 MiB, excluding the four-byte length prefix.
+
+Frame encoding, decoding, validation, and command payload schemas are being developed separately from the storage engine and TCP server.
+
+### Server
+
+The server crate will provide the runnable `zexadis-server` executable.
+
+Its responsibilities include:
+
+- Accepting TCP connections
+- Reading and writing complete protocol frames
+- Validating and dispatching requests
+- Executing commands through the core engine
+- Returning encoded responses
+- Handling connection failures and graceful shutdown
+
+The intended initial model is sequential request processing per connection, with multiple connections served concurrently.
 
 ## Development
 
@@ -53,7 +97,7 @@ Build the workspace:
 cargo build --workspace
 ```
 
-Run tests:
+Run all tests:
 
 ```bash
 cargo test --workspace
@@ -65,30 +109,57 @@ Check the workspace:
 cargo check --workspace
 ```
 
-## Benchmarking
+Run formatting checks:
 
-Performance is a core part of the project.
+```bash
+cargo fmt --all -- --check
+```
 
-Optimization decisions should be supported by reproducible benchmarks rather than assumptions about which technologies or implementations are faster.
+Run Clippy:
 
-Benchmarking infrastructure will be added as the core engine develops.
+```bash
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+```
+
+## Performance
+
+Performance is a core design objective, but performance claims must be supported by measurements.
+
+The project will use reproducible benchmarks to evaluate:
+
+- GET and SET throughput
+- Read and write latency, including tail latency
+- CAS performance under contention
+- Batch execution overhead
+- Performance across different shard counts
+- Concurrent-client throughput
+- Protocol encoding and decoding overhead
+- Allocation and memory overhead
+
+Implementation choices such as hashing, sharding, and data representation should be revisited when benchmark results provide evidence for improvement.
 
 ## Roadmap
 
-The initial roadmap includes:
+- [x] Initial in-memory storage engine
+- [x] Sharded state
+- [x] GET / SET / DEL / EXISTS
+- [x] TTL-based expiration
+- [x] Atomic CAS
+- [x] Sequential batch operations
+- [x] Core semantic tests
+- [x] Initial architecture decision records
+- [ ] Finalize binary frame and command specifications
+- [ ] Complete protocol encoding and decoding
+- [ ] Implement the `zexadis-server` TCP executable
+- [ ] Add end-to-end TCP integration tests
+- [ ] Add graceful shutdown and operational logging
+- [ ] Add metrics and tracing
+- [ ] Establish reproducible performance benchmarks
+- [ ] Add containerized deployment
 
-* [ ] In-memory storage engine
-* [ ] Sharded state
-* [ ] GET / SET / DEL / EXISTS
-* [ ] CAS / INCR
-* [ ] Batch operations
-* [ ] Binary protocol
-* [ ] Tokio TCP server
-* [ ] Metrics and tracing
-* [ ] Performance benchmarks
-* [ ] Containerized deployment
+The roadmap describes project milestones, not guarantees about release dates.
 
-Persistence, replication, clustering, and other distributed features are intentionally outside the initial scope.
+Persistence, replication, clustering, and distributed transactions are outside the initial scope.
 
 ## Contributing
 
@@ -96,7 +167,9 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for developmen
 
 ## Security
 
-For information about reporting security vulnerabilities, see [SECURITY.md](SECURITY.md).
+See [SECURITY.md](SECURITY.md) for information about reporting security vulnerabilities.
+
+Until authentication and transport security are implemented, the server should not be exposed to untrusted networks.
 
 ## License
 
