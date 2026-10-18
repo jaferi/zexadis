@@ -24,12 +24,12 @@ pub fn encode_frame(frame: &Frame) -> Result<Bytes, FrameError> {
     Ok(output.freeze())
 }
 
-pub fn decode_frame(input: &[u8]) -> Result<Frame, DecodeError> {
+pub fn decode_frame(input: Bytes) -> Result<Frame, DecodeError> {
     if input.len() < FRAME_LENGTH_SIZE {
         return Err(DecodeError::Incomplete);
     }
 
-    let declared_length = u32::from_be_bytes([input[0], input[1], input[2], input[3]]) as usize;
+    let declared_length = u32::from_be_bytes(input[..4].try_into().unwrap()) as usize;
 
     if declared_length < FRAME_HEADER_SIZE {
         return Err(FrameError::InvalidFrameLength(declared_length).into());
@@ -55,7 +55,7 @@ pub fn decode_frame(input: &[u8]) -> Result<Frame, DecodeError> {
 
     let version = ProtocolVersion::try_from(input[4])?;
     let opcode = Opcode::try_from(input[5])?;
-    let payload = Bytes::copy_from_slice(&input[6..total_length]);
+    let payload = input.slice(6..total_length);
 
     Ok(Frame::new(version, opcode, payload))
 }
@@ -81,12 +81,15 @@ mod tests {
         Frame::new(ProtocolVersion::V1, opcode, Bytes::copy_from_slice(payload))
     }
 
+    fn decode(input: &[u8]) -> Result<Frame, DecodeError> {
+        decode_frame(Bytes::copy_from_slice(input))
+    }
+
     #[test]
     fn test_encode_decode_round_trip() {
         let frame = test_frame(Opcode::Set, b"hello");
-
         let encoded = encode_frame(&frame).unwrap();
-        let decoded = decode_frame(&encoded).unwrap();
+        let decoded = decode_frame(encoded).unwrap();
 
         assert_eq!(decoded, frame);
     }
@@ -95,9 +98,8 @@ mod tests {
     fn test_round_trip_binary_payload() {
         let payload = [0x00, 0xFF, 0x80, 0x01, 0x00];
         let frame = test_frame(Opcode::Set, &payload);
-
         let encoded = encode_frame(&frame).unwrap();
-        let decoded = decode_frame(&encoded).unwrap();
+        let decoded = decode_frame(encoded).unwrap();
 
         assert_eq!(decoded.payload.as_ref(), payload);
     }
@@ -112,17 +114,15 @@ mod tests {
             u32::from_be_bytes(encoded[..4].try_into().unwrap()),
             FRAME_HEADER_SIZE as u32
         );
-
-        assert_eq!(decode_frame(&encoded).unwrap(), frame);
+        assert_eq!(decode_frame(encoded).unwrap(), frame);
     }
 
     #[test]
     fn test_minimum_valid_frame_length() {
-        let frame = test_frame(Opcode::Get, &[]);
-        let encoded = encode_frame(&frame).unwrap();
+        let encoded = encode_frame(&test_frame(Opcode::Get, &[])).unwrap();
 
         assert_eq!(u32::from_be_bytes(encoded[..4].try_into().unwrap()), 2);
-        assert!(decode_frame(&encoded).is_ok());
+        assert!(decode_frame(encoded).is_ok());
     }
 
     #[test]
@@ -130,7 +130,7 @@ mod tests {
         let input = [0x00, 0x00, 0x00, 0x01, 0x01, 0x01];
 
         assert_eq!(
-            decode_frame(&input),
+            decode(&input),
             Err(DecodeError::Frame(FrameError::InvalidFrameLength(1)))
         );
     }
@@ -140,7 +140,7 @@ mod tests {
         let input = [0x00, 0x00, 0x00, 0x00];
 
         assert_eq!(
-            decode_frame(&input),
+            decode(&input),
             Err(DecodeError::Frame(FrameError::InvalidFrameLength(0)))
         );
     }
@@ -149,9 +149,8 @@ mod tests {
     fn test_maximum_frame_length_is_accepted() {
         let payload = vec![0xAB; DEFAULT_MAX_FRAME_LENGTH - FRAME_HEADER_SIZE];
         let frame = test_frame(Opcode::Set, &payload);
-
         let encoded = encode_frame(&frame).unwrap();
-        let decoded = decode_frame(&encoded).unwrap();
+        let decoded = decode_frame(encoded).unwrap();
 
         assert_eq!(decoded.payload.len(), payload.len());
         assert_eq!(decoded, frame);
@@ -170,11 +169,10 @@ mod tests {
 
     #[test]
     fn test_oversized_declared_length_is_rejected_before_body_read() {
-        let oversized = (DEFAULT_MAX_FRAME_LENGTH as u32 + 1).to_be_bytes();
-        let input = oversized;
+        let input = (DEFAULT_MAX_FRAME_LENGTH as u32 + 1).to_be_bytes();
 
         assert!(matches!(
-            decode_frame(&input),
+            decode(&input),
             Err(DecodeError::Frame(FrameError::FrameTooLarge { .. }))
         ));
     }
@@ -184,17 +182,16 @@ mod tests {
         for length in 0..FRAME_LENGTH_SIZE {
             let input = vec![0; length];
 
-            assert_eq!(decode_frame(&input), Err(DecodeError::Incomplete));
+            assert_eq!(decode(&input), Err(DecodeError::Incomplete));
         }
     }
 
     #[test]
     fn test_partial_payload_returns_incomplete() {
-        let frame = test_frame(Opcode::Set, b"hello");
-        let encoded = encode_frame(&frame).unwrap();
+        let encoded = encode_frame(&test_frame(Opcode::Set, b"hello")).unwrap();
 
-        for end in (FRAME_LENGTH_SIZE + FRAME_HEADER_SIZE)..(encoded.len()) {
-            assert_eq!(decode_frame(&encoded[..end]), Err(DecodeError::Incomplete));
+        for end in (FRAME_LENGTH_SIZE + FRAME_HEADER_SIZE)..encoded.len() {
+            assert_eq!(decode(&encoded[..end]), Err(DecodeError::Incomplete));
         }
     }
 
@@ -207,7 +204,7 @@ mod tests {
         encoded[4] = 2;
 
         assert_eq!(
-            decode_frame(&encoded),
+            decode(&encoded),
             Err(DecodeError::Frame(FrameError::UnsupportedVersion(2)))
         );
     }
@@ -221,19 +218,20 @@ mod tests {
         encoded[5] = 0x07;
 
         assert_eq!(
-            decode_frame(&encoded),
+            decode(&encoded),
             Err(DecodeError::Frame(FrameError::UnknownOpcode(0x07)))
         );
     }
 
     #[test]
     fn test_trailing_bytes_are_rejected() {
-        let frame = test_frame(Opcode::Get, b"key");
-        let mut encoded = encode_frame(&frame).unwrap().to_vec();
+        let mut encoded = encode_frame(&test_frame(Opcode::Get, b"key"))
+            .unwrap()
+            .to_vec();
 
-        encoded.extend_from_slice(&[0xAA]);
+        encoded.push(0xAA);
 
-        assert_eq!(decode_frame(&encoded), Err(DecodeError::TrailingBytes));
+        assert_eq!(decode(&encoded), Err(DecodeError::TrailingBytes));
     }
 
     #[test]
@@ -248,12 +246,20 @@ mod tests {
         stream.extend_from_slice(&first_encoded);
         stream.extend_from_slice(&second_encoded);
 
-        // decode_frame consumes exactly one frame.
-        // use the declared length to advance.
-        let first_decoded = decode_frame(&stream[..first_encoded.len()]).unwrap();
-        let second_decoded = decode_frame(&stream[first_encoded.len()..]).unwrap();
+        let first_decoded = decode(&stream[..first_encoded.len()]).unwrap();
+        let second_decoded = decode(&stream[first_encoded.len()..]).unwrap();
 
         assert_eq!(first_decoded, first);
         assert_eq!(second_decoded, second);
+    }
+
+    #[test]
+    fn test_decoded_payload_shares_original_allocation() {
+        let frame = test_frame(Opcode::Set, b"hello");
+        let encoded = encode_frame(&frame).unwrap();
+
+        let decoded = decode_frame(encoded.clone()).unwrap();
+
+        assert_eq!(decoded.payload.as_ptr(), encoded[6..].as_ptr());
     }
 }
