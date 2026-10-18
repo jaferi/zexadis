@@ -1,6 +1,6 @@
 //! Protocol command definitions and command encoding identifiers.
 
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{BufMut, BytesMut};
 use thiserror::Error;
 
 use crate::framing::{Frame, FrameError, Opcode, ProtocolVersion};
