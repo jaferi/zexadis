@@ -104,6 +104,76 @@ Authentication, TLS, connection pooling policies, request pipelining, and concur
 - **`zexadis-server`:** TCP listener, connection management, frame read/write lifecycle, execution dispatch, logging, and shutdown.
 - **`zexadis-core`:** Storage commands, results, TTL, CAS, batches, and concurrency semantics. It must not depend on the network protocol.
 
+### 8. Frame Representation and Codec Implementation
+
+The `zexadis-protocol` crate will separate frame representation from frame encoding and decoding.
+
+#### `framing.rs`
+
+This module defines:
+
+- `ProtocolVersion`: supported wire-protocol versions, starting with V1 (`0x01`).
+- `Opcode`: explicitly assigned numeric opcodes for requests and responses.
+- `Frame`: the protocol version, opcode, and binary payload.
+- `FrameError`: frame construction and validation errors.
+- Frame size constants and validation logic.
+
+The frame representation is:
+
+```rust
+pub struct Frame {
+    pub version: ProtocolVersion,
+    pub opcode: Opcode,
+    pub payload: Bytes,
+}
+```
+
+`Frame::frame_length()` returns the encoded body length, including the version and opcode but excluding the four-byte length prefix. `Frame::validate(max_frame_length)` validates the configured size limit and the constraints of the wire-format length field.
+
+#### `encoding.rs`
+
+This module implements frame-level encoding and decoding.
+
+The intended public API is:
+
+```rust
+pub fn encode_frame(frame: &Frame) -> Result<Bytes, FrameError>;
+
+pub fn decode_frame(input: Bytes) -> Result<Frame, DecodeError>;
+```
+
+The concrete decoding error type may distinguish incomplete input from invalid frames.
+
+`encode_frame` writes the four-byte big-endian length prefix, version byte, opcode byte, and payload into a contiguous byte buffer.
+
+`decode_frame` validates the declared length before accepting the frame, then validates the protocol version and opcode. It must reject input that does not represent exactly one complete frame.
+
+The decoder accepts an owned `Bytes` buffer and extracts the payload using a shared slice, such as `input.slice(payload_start..payload_end)`. This avoids copying the payload during frame decoding.
+
+Zero-copy payload extraction does not eliminate copies that may be required when accumulating TCP input or constructing an encoded output frame.
+
+#### Command encoding
+
+Command-specific payload encoding and decoding belongs in `command.rs`, separate from frame-level encoding.
+
+The command codec converts between valid request frames and core command types. It must validate the complete payload before returning a command for execution.
+
+Command-specific request and response layouts are defined in their respective ADRs.
+
+### 9. Opcode and Payload Specification
+
+Opcode values and command payload layouts must be explicitly defined and stable within a protocol version.
+
+Each command specification must document:
+
+- Request and response opcodes.
+- Request payload field order, sizes, and byte order.
+- Response payload field order, sizes, and byte order.
+- Validation requirements and error behavior.
+- Command execution semantics relevant to protocol clients.
+
+Unknown opcodes must be rejected. Payloads with truncated fields, invalid lengths, or unexpected trailing bytes must not be accepted as valid commands.
+
 ## Consequences
 
 ### Benefits
