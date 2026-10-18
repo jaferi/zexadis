@@ -116,8 +116,8 @@ pub fn decode_response(frame: &Frame) -> Result<CommandResult, CommandError> {
 
 #[cfg(test)]
 mod tests {
-    use bytes::Bytes;
     use super::*;
+    use bytes::Bytes;
 
     #[test]
     fn get_request_round_trip() {
