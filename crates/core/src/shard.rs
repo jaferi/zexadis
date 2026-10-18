@@ -83,7 +83,6 @@ impl Shard {
     /// - Returns `false` if the key is absent or expired.
     /// - Returns `false` if the current payload does not match `expected`.
     /// - Removes expired entries encountered during evaluation.
-
     pub fn cas(
         &self,
         key: Bytes,
