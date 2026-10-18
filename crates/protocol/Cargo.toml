@@ -17,3 +17,4 @@ categories.workspace = true
 [dependencies]
 bytes.workspace = true
 thiserror.workspace = true
+zexadis-core = { path = "../core" }

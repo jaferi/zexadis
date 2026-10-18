@@ -463,6 +463,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "thiserror",
+ "zexadis-core",
 ]
 
 [[package]]
