@@ -116,6 +116,7 @@ pub fn decode_response(frame: &Frame) -> Result<CommandResult, CommandError> {
 
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
     use super::*;
 
     #[test]
