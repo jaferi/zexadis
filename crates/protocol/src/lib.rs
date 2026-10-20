@@ -1,6 +1,8 @@
 //! Binary protocol implementation for Zexadis clients and servers.
 
 pub mod command;
+pub use command::CommandError;
+
 pub mod encoding;
 pub mod error;
 
