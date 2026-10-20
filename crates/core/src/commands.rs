@@ -47,8 +47,8 @@ pub enum CommandResult {
     /// Returned by GET when the key does not exist or has expired.
     NotFound,
 
-    /// Returned by SET after the write completes.
-    Set,
+    /// Returned by SET `true` if the key was set successfully.
+    Set(bool),
 
     /// Returned by EXISTS: `true` if the key exists and is not expired.
     Exists(bool),

@@ -78,7 +78,7 @@ impl Storage {
                 if !stored {
                     return Err(StorageError::InvalidTtl);
                 }
-                Ok(CommandResult::Set)
+                Ok(CommandResult::Set(true))
             }
 
             Command::Del { key } => {
@@ -220,7 +220,7 @@ mod tests {
             1000,
         );
 
-        assert_eq!(set_result, Ok(CommandResult::Set));
+        assert_eq!(set_result, Ok(CommandResult::Set(true)));
 
         let get_result = storage.execute(Command::Get { key: bytes(b"key") }, 1000);
 
@@ -493,9 +493,9 @@ mod tests {
         assert_eq!(
             result,
             Ok(CommandResult::Batch(vec![
-                CommandResult::Set,
+                CommandResult::Set(true),
                 CommandResult::Entry(bytes(b"first")),
-                CommandResult::Set,
+                CommandResult::Set(true),
                 CommandResult::Entry(bytes(b"second")),
             ]))
         );
@@ -574,7 +574,7 @@ mod tests {
         assert_eq!(
             result,
             Ok(CommandResult::Batch(vec![
-                CommandResult::Set,
+                CommandResult::Set(true),
                 CommandResult::Entry(bytes(b"value")),
             ]))
         );
