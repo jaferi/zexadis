@@ -115,7 +115,7 @@ pub fn decode_request(frame: &Frame) -> Result<Command, CommandError> {
                     .map_err(|_| CommandError::InvalidPayload)?,
             ) as usize;
 
-            let ttl_flag = frame.payload[8];
+            let ttl_flag: u8 = frame.payload[8];
             match ttl_flag {
                 0 => {
                     let prefix_len = 4 + 4 + 1; // key length, value length, ttl flag
@@ -149,10 +149,10 @@ pub fn decode_request(frame: &Frame) -> Result<Command, CommandError> {
                     })
                 }
 
-                _ => return Err(CommandError::InvalidPayload),
+                _ => Err(CommandError::InvalidPayload),
             }
         }
-        _ => return Err(CommandError::UnexpectedOpcode(frame.opcode)),
+        _ => Err(CommandError::UnexpectedOpcode(frame.opcode)),
     }
 }
 
