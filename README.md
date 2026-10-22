@@ -148,9 +148,9 @@ Implementation choices such as hashing, sharding, and data representation should
 - [x] Sequential batch operations
 - [x] Core semantic tests
 - [x] Initial architecture decision records
-- [ ] Finalize binary frame and command specifications
+- [x] Finalize binary frame and command specifications
+- [x] Implement the `zexadis-server` TCP executable
 - [ ] Complete protocol encoding and decoding
-- [ ] Implement the `zexadis-server` TCP executable
 - [ ] Add end-to-end TCP integration tests
 - [ ] Add graceful shutdown and operational logging
 - [ ] Add metrics and tracing
