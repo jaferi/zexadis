@@ -1,10 +1,10 @@
-use std::net::TcpStream;
-use std::io::Write;
 use bytes::Bytes;
+use std::io::Write;
+use std::net::TcpStream;
 
 use zexadis_core::commands::Command;
-use zexadis_protocol::encoding::encode_frame;
 use zexadis_protocol::command::encode_request;
+use zexadis_protocol::encoding::encode_frame;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stream = TcpStream::connect("127.0.0.1:6379")?;
