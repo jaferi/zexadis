@@ -4,7 +4,7 @@ use std::net::TcpListener;
 
 use crate::connection;
 
-pub fn start_server(address: &str) -> std::io::Result<()> {
+pub fn run(address: &str) -> std::io::Result<()> {
     let listener = TcpListener::bind(address)?;
     println!("Server listening on {}", address);
 
