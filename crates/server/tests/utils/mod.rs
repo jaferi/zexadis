@@ -48,9 +48,7 @@ impl TestServer {
     pub fn send(&mut self, command: &Command) -> Result<CommandResult, Box<dyn std::error::Error>> {
         let request_bytes = {
             let request_frame = encode_request(command)?;
-            let request_bytes = encode_frame(&request_frame)?;
-
-            request_bytes
+            encode_frame(&request_frame)?
         };
 
         self.stream.write_all(&request_bytes)?;
