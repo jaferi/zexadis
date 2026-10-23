@@ -5,6 +5,7 @@ use thiserror::Error;
 use crate::{Frame, FrameError, Opcode};
 use zexadis_core::commands::{Command, CommandResult};
 
+pub mod del;
 pub mod get;
 pub mod set;
 
