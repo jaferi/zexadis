@@ -81,3 +81,207 @@ pub fn decode_response(frame: &Frame) -> Result<CommandResult, CommandError> {
 
     Ok(CommandResult::Deleted(success))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::Bytes;
+
+    #[test]
+    fn del_request_round_trip() {
+        let command = Command::Del {
+            key: Bytes::from_static(b"my-key"),
+        };
+
+        let frame = encode_request(&command).unwrap();
+        let decoded = decode_request(&frame).unwrap();
+
+        assert_eq!(decoded, command);
+        assert_eq!(frame.opcode, Opcode::Del);
+    }
+
+    #[test]
+    fn del_request_decodes_key_without_copying() {
+        let command = Command::Del {
+            key: Bytes::from_static(b"my-key"),
+        };
+
+        let frame = encode_request(&command).unwrap();
+        let decoded = decode_request(&frame).unwrap();
+
+        let Command::Del { key } = decoded else {
+            panic!("expected DEL command");
+        };
+
+        assert_eq!(key.as_ptr(), frame.payload.slice(4..).as_ptr());
+    }
+
+    #[test]
+    fn del_request_rejects_truncated_length() {
+        let frame = Frame::new(
+            ProtocolVersion::V1,
+            Opcode::Del,
+            Bytes::from_static(&[0x00, 0x00]),
+        );
+
+        assert_eq!(decode_request(&frame), Err(CommandError::InvalidPayload));
+    }
+
+    #[test]
+    fn del_request_rejects_incorrect_key_length() {
+        let frame = Frame::new(
+            ProtocolVersion::V1,
+            Opcode::Del,
+            Bytes::from_static(&[0x00, 0x00, 0x00, 0x05, b'a', b'b']),
+        );
+
+        assert_eq!(decode_request(&frame), Err(CommandError::InvalidPayload));
+    }
+
+    #[test]
+    fn del_request_supports_binary_key() {
+        let command = Command::Del {
+            key: Bytes::from_static(&[0x00, 0xFF, 0x80, 0x01]),
+        };
+
+        let frame = encode_request(&command).unwrap();
+        let decoded = decode_request(&frame).unwrap();
+
+        assert_eq!(decoded, command);
+    }
+
+    #[test]
+    fn del_request_supports_empty_key() {
+        let command = Command::Del { key: Bytes::new() };
+
+        let frame = encode_request(&command).unwrap();
+        let decoded = decode_request(&frame).unwrap();
+
+        assert_eq!(decoded, command);
+    }
+
+    #[test]
+    fn del_response_round_trip_not_found() {
+        let result = CommandResult::Deleted(false);
+
+        let frame = encode_response(&result).unwrap();
+        let decoded = decode_response(&frame).unwrap();
+
+        assert_eq!(decoded, result);
+        assert_eq!(frame.payload.as_ref(), &[0x00]);
+    }
+
+    #[test]
+    fn del_response_rejects_truncated_value() {
+        let frame = Frame::new(
+            ProtocolVersion::V1,
+            Opcode::DelResponse,
+            Bytes::from_static(&[0x01, 0, 0, 0, 5, b'a']),
+        );
+
+        assert_eq!(decode_response(&frame), Err(CommandError::InvalidPayload));
+    }
+
+    #[test]
+    fn del_request_rejects_wrong_opcode() {
+        let frame = Frame::new(
+            ProtocolVersion::V1,
+            Opcode::Get,
+            Bytes::from_static(&[0x00, 0x00, 0x00, 0x01, b'a']),
+        );
+
+        assert_eq!(
+            decode_request(&frame),
+            Err(CommandError::UnexpectedOpcode(Opcode::Get))
+        );
+    }
+
+    #[test]
+    fn del_request_rejects_trailing_bytes() {
+        // Declares a one-byte key, but contains two key bytes.
+        let frame = Frame::new(
+            ProtocolVersion::V1,
+            Opcode::Del,
+            Bytes::from_static(&[0x00, 0x00, 0x00, 0x01, b'a', b'b']),
+        );
+
+        assert_eq!(decode_request(&frame), Err(CommandError::InvalidPayload));
+    }
+
+    #[test]
+    fn del_request_encoder_rejects_unsupported_command() {
+        let command = Command::Get {
+            key: Bytes::from_static(b"my-key"),
+        };
+
+        assert_eq!(
+            encode_request(&command),
+            Err(CommandError::UnsupportedCommand)
+        );
+    }
+
+    #[test]
+    fn del_response_round_trip_success() {
+        let result = CommandResult::Deleted(true);
+
+        let frame = encode_response(&result).unwrap();
+        let decoded = decode_response(&frame).unwrap();
+
+        assert_eq!(decoded, result);
+        assert_eq!(frame.opcode, Opcode::DelResponse);
+        assert_eq!(frame.payload.as_ref(), &[0x01]);
+    }
+
+    #[test]
+    fn del_response_encoder_rejects_unsupported_result() {
+        let result = CommandResult::NotFound;
+
+        assert_eq!(
+            encode_response(&result),
+            Err(CommandError::UnsupportedCommand)
+        );
+    }
+
+    #[test]
+    fn del_response_rejects_empty_payload() {
+        let frame = Frame::new(ProtocolVersion::V1, Opcode::DelResponse, Bytes::new());
+
+        assert_eq!(decode_response(&frame), Err(CommandError::InvalidPayload));
+    }
+
+    #[test]
+    fn del_response_rejects_unknown_status() {
+        let frame = Frame::new(
+            ProtocolVersion::V1,
+            Opcode::DelResponse,
+            Bytes::from_static(&[0x02]),
+        );
+
+        assert_eq!(decode_response(&frame), Err(CommandError::InvalidPayload));
+    }
+
+    #[test]
+    fn del_response_rejects_trailing_bytes() {
+        let frame = Frame::new(
+            ProtocolVersion::V1,
+            Opcode::DelResponse,
+            Bytes::from_static(&[0x01, 0x00]),
+        );
+
+        assert_eq!(decode_response(&frame), Err(CommandError::InvalidPayload));
+    }
+
+    #[test]
+    fn del_response_rejects_wrong_opcode() {
+        let frame = Frame::new(
+            ProtocolVersion::V1,
+            Opcode::GetResponse,
+            Bytes::from_static(&[0x01]),
+        );
+
+        assert_eq!(
+            decode_response(&frame),
+            Err(CommandError::UnexpectedOpcode(Opcode::GetResponse))
+        );
+    }
+}
