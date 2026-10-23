@@ -20,11 +20,13 @@ fn set_request_and_response_round_trip() {
     let set_result = server.send(&set_command).unwrap();
     assert_eq!(set_result, CommandResult::Set(true));
 
-
     let get_command = Command::Get {
         key: Bytes::from_static(b"user:42"),
     };
 
     let get_result = server.send(&get_command).unwrap();
-    assert_eq!(get_result, CommandResult::Entry(Bytes::from_static(b"test-bytes")));
+    assert_eq!(
+        get_result,
+        CommandResult::Entry(Bytes::from_static(b"test-bytes"))
+    );
 }
