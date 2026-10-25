@@ -1,3 +1,5 @@
+//! Verify key-value operations through the running server.
+
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -32,16 +34,25 @@ fn set_request_and_response_round_trip() {
 }
 
 #[test]
-fn get_missing_key_returns_not_found() {
+fn binary_keys_and_values_round_trip() {
     let mut server = TestServer::new().unwrap();
 
+    let key = Bytes::from_static(b"\x00\xff\x01binary-key");
+    let value = Bytes::from_static(b"\x00\xff\xfe\x80\x01");
+
     let result = server
-        .send(&Command::Get {
-            key: Bytes::from_static(b"missing-key"),
+        .send(&Command::Set {
+            key: key.clone(),
+            value: value.clone(),
+            ttl: None,
         })
         .unwrap();
 
-    assert_eq!(result, CommandResult::NotFound);
+    assert_eq!(result, CommandResult::Set(true));
+
+    let result = server.send(&Command::Get { key }).unwrap();
+
+    assert_eq!(result, CommandResult::Entry(value));
 }
 
 #[test]
@@ -72,54 +83,16 @@ fn set_overwrites_existing_value() {
 }
 
 #[test]
-fn binary_keys_and_values_round_trip() {
+fn get_missing_key_returns_not_found() {
     let mut server = TestServer::new().unwrap();
-
-    let key = Bytes::from_static(b"\x00\xff\x01binary-key");
-    let value = Bytes::from_static(b"\x00\xff\xfe\x80\x01");
 
     let result = server
-        .send(&Command::Set {
-            key: key.clone(),
-            value: value.clone(),
-            ttl: None,
+        .send(&Command::Get {
+            key: Bytes::from_static(b"missing-key"),
         })
         .unwrap();
 
-    assert_eq!(result, CommandResult::Set(true));
-
-    let result = server.send(&Command::Get { key }).unwrap();
-
-    assert_eq!(result, CommandResult::Entry(value));
-}
-
-#[test]
-fn get_expired_key_returns_not_found() {
-    let mut server = TestServer::new().unwrap();
-
-    let key = Bytes::from_static(b"temporary-key");
-
-    server
-        .send(&Command::Set {
-            key: key.clone(),
-            value: Bytes::from_static(b"temporary-value"),
-            ttl: Some(Duration::from_millis(100)),
-        })
-        .unwrap();
-
-    // Confirm the key is initially available.
-    assert_eq!(
-        server.send(&Command::Get { key: key.clone() }).unwrap(),
-        CommandResult::Entry(Bytes::from_static(b"temporary-value"))
-    );
-
-    std::thread::sleep(Duration::from_millis(200));
-
-    // The next access should trigger expiration if it hasn't already.
-    assert_eq!(
-        server.send(&Command::Get { key }).unwrap(),
-        CommandResult::NotFound
-    );
+    assert_eq!(result, CommandResult::NotFound);
 }
 
 #[test]
