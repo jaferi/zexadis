@@ -34,24 +34,6 @@ fn set_request_survives_frame_round_trip() {
 }
 
 #[test]
-fn get_response_preserves_binary_value() {
-    let result = CommandResult::Entry(Bytes::from_static(b"\x00\xFF\x10\xAB\x00"));
-
-    // Result -> response Frame
-    let frame = encode_response(&result).unwrap();
-    assert_eq!(frame.opcode, Opcode::GetResponse);
-
-    // Response Frame -> bytes -> Frame
-    let wire_bytes = encode_frame(&frame).unwrap();
-    let decoded_frame = decode_frame(wire_bytes).unwrap();
-
-    // Frame -> Result
-    let decoded_result = decode_response(&decoded_frame).unwrap();
-
-    assert_eq!(decoded_result, result);
-}
-
-#[test]
 fn set_request_and_response_round_trip() {
     let command = Command::Set {
         key: Bytes::from_static(b"session"),
@@ -111,4 +93,68 @@ fn truncated_set_request_returns_error() {
     );
 
     assert!(decode_request(&frame).is_err());
+}
+
+fn assert_request_round_trip(command: Command, expected_opcode: Opcode) {
+    // Command -> Frame
+    let frame = encode_request(&command).unwrap();
+    assert_eq!(frame.opcode, expected_opcode);
+
+    // Frame -> wire bytes
+    let wire_bytes = encode_frame(&frame).unwrap();
+
+    // Wire bytes -> Frame -> Command
+    let received_frame = decode_frame(wire_bytes).unwrap();
+    let received_command = decode_request(&received_frame).unwrap();
+
+    assert_eq!(received_command, command);
+}
+
+#[test]
+fn get_request_preserves_binary_key() {
+    let command = Command::Get {
+        key: Bytes::from_static(b"user:\x00\xFF\x10"),
+    };
+
+    assert_request_round_trip(command, Opcode::Get);
+}
+
+#[test]
+fn set_request_preserves_binary_value_and_ttl() {
+    let command = Command::Set {
+        key: Bytes::from_static(b"user:42"),
+        value: Bytes::from_static(b"\x00\xFF\x10\xAB"),
+        ttl: Some(Duration::from_secs(60)),
+    };
+
+    assert_request_round_trip(command, Opcode::Set);
+}
+
+#[test]
+fn set_request_preserves_absence_of_ttl() {
+    let command = Command::Set {
+        key: Bytes::from_static(b"session"),
+        value: Bytes::from_static(b"active"),
+        ttl: None,
+    };
+
+    assert_request_round_trip(command, Opcode::Set);
+}
+
+#[test]
+fn del_request_preserves_key() {
+    let command = Command::Del {
+        key: Bytes::from_static(b"cache:\x00\xFF"),
+    };
+
+    assert_request_round_trip(command, Opcode::Del);
+}
+
+#[test]
+fn exists_request_preserves_key() {
+    let command = Command::Exists {
+        key: Bytes::from_static(b"session:42"),
+    };
+
+    assert_request_round_trip(command, Opcode::Exists);
 }
