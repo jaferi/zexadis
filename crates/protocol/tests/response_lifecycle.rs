@@ -1,0 +1,1 @@
+//! Verify that command results survive response encoding and decoding, including edge cases and ordered batch results.

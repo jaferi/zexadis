@@ -1,0 +1,1 @@
+//! Verify that consecutive mixed messages preserve their command types, opcodes, payloads, and independent state.

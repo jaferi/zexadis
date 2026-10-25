@@ -1,3 +1,5 @@
+//! Verify that every supported request type can be encoded into wire bytes and reconstructed correctly.
+
 use std::time::Duration;
 
 use bytes::Bytes;
