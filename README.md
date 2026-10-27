@@ -16,11 +16,13 @@ Zexadis focuses on a small, purpose-built command surface and a binary-first dat
 
 ## Status
 
-**Early development — APIs and protocol are evolving.**
+**Alpha - v0.5.1**
 
-The core storage engine implements sharded in-memory storage, binary keys and values, TTL-based expiration, atomic compare-and-swap (CAS), and sequential batch execution.
+Zexadis provides a runnable TCP server backed by a sharded in-memory storage engine and a binary wire protocol. Clients can perform key-value operations using binary keys and values, TTL-based expiration, atomic compare-and-swap (CAS), and sequential batch execution.
 
-The binary wire protocol and TCP server are under development. The project is not yet intended for production deployment.
+The implementation is usable for experimentation, integration, and evaluation. Testing coverage and operational capabilities are still being expanded, including CAS and batch end-to-end tests, graceful shutdown, logging, metrics, reproducible benchmarks, and containerized deployment.
+
+Zexadis is open for use, feedback, and contributions. Production readiness has not yet been established.
 
 ## Design Goals
 
@@ -150,8 +152,10 @@ Implementation choices such as hashing, sharding, and data representation should
 - [x] Initial architecture decision records
 - [x] Finalize binary frame and command specifications
 - [x] Implement the `zexadis-server` TCP executable
-- [ ] Complete protocol encoding and decoding
-- [ ] Add end-to-end TCP integration tests
+- [x] Complete protocol encoding and decoding
+- [x] Add end-to-end TCP integration tests
+- [ ] Atomic CAS integration tests and end-to-end tests
+- [ ] Sequential batch operations integration tests and end-to-end tests
 - [ ] Add graceful shutdown and operational logging
 - [ ] Add metrics and tracing
 - [ ] Establish reproducible performance benchmarks

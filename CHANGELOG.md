@@ -1,21 +1,19 @@
 # Changelog
 
-All notable changes to Zexadis will be documented in this file.
+Notable changes to Zexadis are documented here.
 
-The project is currently under active development and has not reached its first release.
-
-## [Unreleased]
+## [0.5.1] - 2026-10-27
 
 ### Added
+- Sharded in-memory storage engine.
+- Binary keys and values.
+- TTL-based expiration with lazy removal.
+- GET, SET, DEL, and EXISTS commands.
+- Binary wire protocol V1 with frame encoding, decoding, and validation.
+- TCP server for client access.
+- Initial protocol and TCP end-to-end tests.
 
-* Initial Cargo workspace structure
-* Core, protocol, and server crates
-* Initial project documentation
-
-### Changed
-
-Nothing yet.
-
-### Fixed
-
-Nothing yet.
+### Notes
+- CAS and batch execution are not yet implemented.
+- APIs and protocol behavior may evolve during Alpha.
+- Production readiness has not been established.
